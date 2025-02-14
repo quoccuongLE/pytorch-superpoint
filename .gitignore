@@ -1,0 +1,18 @@
+# Jupyter tmp files 
+.ipynb_checkpoints
+
+# VSCode settings
+*.code-workspace
+.vscode
+__pycache__
+
+# PyCharm
+.idea
+
+# Compiled files
+*.pyc
+dist
+*egg-info*
+
+.venv/
+tmp/
