@@ -52,7 +52,7 @@ def train_joint(config, output_dir, args):
     # from utils.utils import saveImg
     torch.set_default_tensor_type(torch.FloatTensor)
     task = config['data']['dataset']
-    
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info('train on device: %s', device)
     with open(os.path.join(output_dir, 'config.yml'), 'w') as f:
@@ -139,5 +139,3 @@ if __name__ == '__main__':
     # with capture_outputs(os.path.join(output_dir, 'log')):
     logging.info('Running command {}'.format(args.command.upper()))
     args.func(config, output_dir, args)
-
-

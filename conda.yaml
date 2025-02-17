@@ -1,6 +1,5 @@
 name: superpoint
 channels:
-  - defaults
   - pytorch
   - conda-forge
   - nvidia
@@ -9,6 +8,14 @@ dependencies:
   - pytorch::pytorch=2.2.2
   - pytorch::torchvision=0.17.2
   - pytorch-cuda=12.1
+  - conda-forge::imageio
+  - conda-forge::tensorboardx
+  - conda-forge::opencv
   - conda-forge::matplotlib
   - conda-forge::pydantic
   - tqdm
+  - pip
+  - pip:
+    - coloredlogs
+    - termcolor
+    - imgaug

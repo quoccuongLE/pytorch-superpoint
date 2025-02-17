@@ -4,9 +4,10 @@ from https://github.com/rpautrat/SuperPoint/blob/master/superpoint/datasets/synt
 """
 
 import numpy as np
-import tensorflow as tf
+# import tensorflow as tf
 import cv2
 import os
+import logging
 import tarfile
 from pathlib import Path
 from tqdm import tqdm
@@ -75,7 +76,7 @@ class SyntheticShapes(BaseDataset):
     def dump_primitive_data(self, primitive, tar_path, config):
         temp_dir = Path(os.environ['TMPDIR'], primitive)
 
-        tf.logging.info('Generating tarfile for primitive {}.'.format(primitive))
+        logging.info('Generating tarfile for primitive {}.'.format(primitive))
         synthetic_dataset.set_random_state(np.random.RandomState(
                 config['generation']['random_seed']))
         for split, size in self.config['generation']['split_sizes'].items():
@@ -93,8 +94,8 @@ class SyntheticShapes(BaseDataset):
 
                 b = config['preprocessing']['blur_size']
                 image = cv2.GaussianBlur(image, (b, b), 0)
-                points = (points * np.array(config['preprocessing']['resize'], np.float)
-                          / np.array(config['generation']['image_size'], np.float))
+                points = (points * np.array(config['preprocessing']['resize'], float)
+                          / np.array(config['generation']['image_size'], float))
                 image = cv2.resize(image, tuple(config['preprocessing']['resize'][::-1]),
                                    interpolation=cv2.INTER_LINEAR)
 
@@ -106,7 +107,7 @@ class SyntheticShapes(BaseDataset):
         tar.add(temp_dir, arcname=primitive)
         tar.close()
         shutil.rmtree(temp_dir)
-        tf.logging.info('Tarfile dumped to {}.'.format(tar_path))
+        logging.info('Tarfile dumped to {}.'.format(tar_path))
 
     def _init_dataset(self, **config):
         # Parse drawing primitives
@@ -203,7 +204,7 @@ class SyntheticShapes(BaseDataset):
         data = data.map(pipeline.add_dummy_valid_mask)
 
         if config['cache_in_memory'] and not config['on-the-fly']:
-            tf.logging.info('Caching data, fist access will take some time.')
+            logging.info('Caching data, fist access will take some time.')
             data = data.cache()
 
         # Apply augmentation

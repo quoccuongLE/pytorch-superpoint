@@ -16,3 +16,9 @@ dist
 
 .venv/
 tmp/
+logs/*/*.yml
+runs/
+datasets/draw_*
+datasets/gaussian_noise/
+datasets/synthetic_shapes_v6/
+*.pth.tar

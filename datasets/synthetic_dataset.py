@@ -46,7 +46,7 @@ def add_salt_and_pepper(img):
     img[white > 0] = 255
     img[black > 0] = 0
     cv.blur(img, (5, 5), img)
-    return np.empty((0, 2), dtype=np.int)
+    return np.empty((0, 2), dtype=int)
 
 
 def generate_background(size=(960, 1280), nb_blobs=100, min_rad_ratio=0.01,
@@ -141,8 +141,8 @@ def draw_lines(img, nb_lines=10):
       nb_lines: maximal number of lines
     """
     num_lines = random_state.randint(1, nb_lines)
-    segments = np.empty((0, 4), dtype=np.int)
-    points = np.empty((0, 2), dtype=np.int)
+    segments = np.empty((0, 4), dtype=int)
+    points = np.empty((0, 2), dtype=int)
     background_color = int(np.mean(img))
     min_dim = min(img.shape)
     for i in range(num_lines):
@@ -231,10 +231,10 @@ def draw_multiple_polygons(img, max_sides=8, nb_polygons=30, **extra):
       max_sides: maximal number of sides + 1
       nb_polygons: maximal number of polygons
     """
-    segments = np.empty((0, 4), dtype=np.int)
+    segments = np.empty((0, 4), dtype=int)
     centers = []
     rads = []
-    points = np.empty((0, 2), dtype=np.int)
+    points = np.empty((0, 2), dtype=int)
     background_color = int(np.mean(img))
     for i in range(nb_polygons):
         num_corners = random_state.randint(3, max_sides)
@@ -306,8 +306,8 @@ def draw_ellipses(img, nb_ellipses=20):
     Parameters:
       nb_ellipses: maximal number of ellipses
     """
-    centers = np.empty((0, 2), dtype=np.int)
-    rads = np.empty((0, 1), dtype=np.int)
+    centers = np.empty((0, 2), dtype=int)
+    rads = np.empty((0, 1), dtype=int)
     min_dim = min(img.shape[0], img.shape[1]) / 4
     background_color = int(np.mean(img))
     for i in range(nb_ellipses):
@@ -328,7 +328,7 @@ def draw_ellipses(img, nb_ellipses=20):
         col = get_random_color(background_color)
         angle = random_state.rand() * 90
         cv.ellipse(img, (x, y), (ax, ay), angle, 0, 360, col, -1)
-    return np.empty((0, 2), dtype=np.int)
+    return np.empty((0, 2), dtype=int)
 
 
 def draw_star(img, nb_branches=6):
@@ -419,7 +419,7 @@ def draw_checkerboard(img, max_rows=7, max_cols=7, transform_params=(0.05, 0.15)
     warped_points = warped_points.astype(int)
 
     # Fill the rectangles
-    colors = np.zeros((rows * cols,), np.int32)
+    colors = np.zeros((rows * cols,), int)
     for i in range(rows):
         for j in range(cols):
             # Get a color that contrast with the neighboring cells
@@ -503,9 +503,9 @@ def draw_stripes(img, max_nb_cols=13, min_width_ratio=0.04,
                                 axis=0) - cols) >= min_width]
     col = cols.shape[0] - 1  # update the number of cols
     cols = np.reshape(cols, (col + 1, 1))
-    cols1 = np.concatenate([cols, np.zeros((col + 1, 1), np.int32)], axis=1)
+    cols1 = np.concatenate([cols, np.zeros((col + 1, 1), int)], axis=1)
     cols2 = np.concatenate([cols,
-                            (board_size[0] - 1) * np.ones((col + 1, 1), np.int32)],
+                            (board_size[0] - 1) * np.ones((col + 1, 1), int)],
                            axis=1)
     points = np.concatenate([cols1, cols2], axis=0)
 
@@ -683,7 +683,7 @@ def draw_cube(img, min_size_ratio=0.2, min_angle_rot=math.pi / 10,
 def gaussian_noise(img):
     """ Apply random noise to the image """
     cv.randu(img, 0, 255)
-    return np.empty((0, 2), dtype=np.int)
+    return np.empty((0, 2), dtype=int)
 
 
 def draw_interest_points(img, points):
