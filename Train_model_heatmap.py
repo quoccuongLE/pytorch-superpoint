@@ -25,6 +25,11 @@ from utils.utils import precisionRecall_torch
 
 from pathlib import Path
 from Train_model_frontend import Train_model_frontend
+import yaml
+
+
+def yaml_print(data: dict):
+    print(yaml.dump(data, default_flow_style=False))
 
 
 def thd_img(img, thd=0.015):
@@ -72,7 +77,7 @@ class Train_model_heatmap(Train_model_frontend):
 
         self.config = self.default_config
         self.config = dict_update(self.config, config)
-        print("check config!!", self.config)
+        yaml_print(self.config)
 
         # init parameters
         self.device = device
@@ -287,7 +292,6 @@ class Train_model_heatmap(Train_model_frontend):
         else:
             loss_det_warp = torch.tensor([0]).float().to(self.device)
 
-
         ## get labels, masks, loss for detection
         # labels3D_in_loss = self.getLabels(labels_2D, self.cell_size, device=self.device)
         # mask_3D_flattened = self.getMasks(mask_2D, self.cell_size, device=self.device)
@@ -402,7 +406,6 @@ class Train_model_heatmap(Train_model_frontend):
                 heatmap_warp_nms_batch = self.heatmap_to_nms(
                     self.images_dict, heatmap_warp, name="heatmap_warp"
                 )
-
 
             def update_overlap(
                 images_dict, labels_warp_2D, heatmap_nms_batch, img_warp, name

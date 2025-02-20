@@ -5,17 +5,21 @@
 # loss --> delete if useless
 """
 
+import datetime
+import os
+import tarfile
+from collections import OrderedDict
+from pathlib import Path
+
 import numpy as np
 import torch
-from pathlib import Path
-import datetime
-import datetime
-from collections import OrderedDict
-import torch.nn.functional as F
 import torch.nn as nn
+import torch.nn.functional as F
+
 ###### check
 # from utils.nms_pytorch import box_nms as box_nms_retinaNet
 from utils.d2s import DepthToSpace, SpaceToDepth
+
 
 def img_overlap(img_r, img_g, img_gray):  # img_b repeat
     def to_3d(img):
@@ -164,7 +168,8 @@ def loadConfig(filename):
     return config
 
 def append_csv(file='foo.csv', arr=[]):
-    import csv   
+    import csv
+
     # fields=['first','second','third']
     # pre = lambda i: ['{0:.3f}'.format(x) for x in i]
     with open(file, 'a') as f:
@@ -190,6 +195,8 @@ def save_checkpoint(save_path, dispnet_state, exp_pose_state, is_best, filename=
             shutil.copyfile(save_path/'{}_{}'.format(prefix,filename), save_path/'{}_model_best.pth.tar'.format(prefix))
 '''
 import cv2
+
+
 def sample_homography(inv_scale=3):
   corner_img = np.array([(-1, -1), (-1, 1), (1, -1), (1, 1)])
   # offset_r = 1 - 1/inv_scale
@@ -227,8 +234,7 @@ def warpLabels(pnts, homography, H, W):
     output:
         warped_pnts: numpy
     """
-    from utils.utils import warp_points
-    from utils.utils import filter_points
+    from utils.utils import filter_points, warp_points
     pnts = torch.tensor(pnts).long()
     homography = torch.tensor(homography, dtype=torch.float32)
     warped_pnts = warp_points(torch.stack((pnts[:, 0], pnts[:, 1]), dim=1),
@@ -338,7 +344,7 @@ def inv_warp_image_batch(img, mat_homo_inv, device='cpu', mode='bilinear'):
         mat_homo_inv = mat_homo_inv.view(1,3,3)
 
     Batch, channel, H, W = img.shape
-    coor_cells = torch.stack(torch.meshgrid(torch.linspace(-1, 1, W), torch.linspace(-1, 1, H)), dim=2)
+    coor_cells = torch.stack(torch.meshgrid(torch.linspace(-1, 1, W), torch.linspace(-1, 1, H), indexing="ij"), dim=2)
     coor_cells = coor_cells.transpose(0, 1)
     coor_cells = coor_cells.to(device)
     coor_cells = coor_cells.contiguous()
@@ -435,7 +441,6 @@ def labels2Dto3D_flattened(labels, cell_size):
     return labels
 
 
-
 def old_flatten64to1(semi, tensor=False):
     '''
     Flatten 3D np array to 2D
@@ -525,9 +530,9 @@ def flattenDetection(semi, tensor=False):
     return heatmap
 
 
-
 def sample_homo(image):
     import tensorflow as tf
+
     from utils.homographies import sample_homography
     H = sample_homography(tf.shape(image)[:2])
     with tf.Session():
@@ -732,7 +737,7 @@ def denormPts(pts, shape):
 #     # concat image and dense_desc
 #     # extract patches
 
-#     # 
+#     #
 #     pass
 
 
@@ -776,7 +781,7 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
         shape = torch.tensor([H, W]).type(torch.FloatTensor).to(device)
         # compute the center pixel of every cell in the image
 
-        coor_cells = torch.stack(torch.meshgrid(torch.arange(Hc), torch.arange(Wc)), dim=2)
+        coor_cells = torch.stack(torch.meshgrid(torch.arange(Hc), torch.arange(Wc), indexing="ij"), dim=2)
         coor_cells = coor_cells.type(torch.FloatTensor).to(device)
         coor_cells = coor_cells * cell_size + cell_size // 2
         ## coord_cells is now a grid containing the coordinates of the Hc x Wc
@@ -924,3 +929,50 @@ def crop_or_pad_choice(in_num_points, out_num_points, shuffle=False):
         pad = np.random.choice(choice, num_pad, replace=True)
         choice = np.concatenate([choice, pad])
     return choice
+
+
+def is_tar_extracted(tar_filepath: str, extraction_directory: str):
+    """
+    Checks if a tar file has been completely extracted to a directory.
+
+    Args:
+        tar_filepath: Path to the tar file.
+        extraction_directory: Path to the directory where the tar file
+                             should have been extracted.
+
+    Returns:
+        True if the tar file appears to be completely extracted, False otherwise.
+        Returns None if there's an issue opening the tar file.
+    """
+
+    try:
+        with tarfile.open(tar_filepath, "r") as tar:
+            members = tar.getmembers()
+            # extracted_files = set(os.listdir(extraction_directory))
+
+            for member in members:
+                # Handle different member types (files, directories, etc.)
+                member_name = member.name  # Get the name within the archive
+                extracted_path = os.path.join(extraction_directory, member_name)
+
+                # Check for file existence.  Crucially, handle directory members!
+                if member.isdir():
+                    if not os.path.isdir(extracted_path):  # Dir must be a directory
+                        return False
+                elif not os.path.exists(extracted_path):  # File must exist
+                    return False
+                # No need to check file content equality, just existence.
+
+        return True  # All members seem to be present
+
+    except FileNotFoundError:
+        print(
+            f"Error: Tar file '{tar_filepath}' or extraction directory '{extraction_directory}' not found."
+        )
+        return None  # Indicate an error
+    except tarfile.ReadError:
+        print(f"Error: Could not open or read tar file '{tar_filepath}'.")
+        return None
+    except Exception as e:  # Catch any other potential tarfile errors
+        print(f"An unexpected error occurred: {e}")
+        return None

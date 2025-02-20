@@ -5,6 +5,7 @@ Author: You-Yi Jau, Rui Zhu
 Date: 2019/12/12
 """
 
+import os
 import torch.utils.data as data
 import torch
 import numpy as np
@@ -31,6 +32,8 @@ import shutil
 from settings import DEBUG as debug
 from settings import DATA_PATH
 from settings import SYN_TMPDIR
+
+from utils.utils import is_tar_extracted
 
 # DATA_PATH = '.'
 import multiprocessing
@@ -236,13 +239,16 @@ class SyntheticDataset_gaussian(data.Dataset):
                 self.dump_primitive_data(primitive, tar_path, self.config)
 
             # Untar locally
-            logging.info("Extracting archive for primitive {}.".format(primitive))
-            logging.info(f"tar_path: {tar_path}")
-            tar = tarfile.open(tar_path)
-            # temp_dir = Path(os.environ['TMPDIR'])
-            temp_dir = Path(TMPDIR)
-            tar.extractall(path=temp_dir)
-            tar.close()
+            temp_dir = Path(os.environ.get("TMPDIR", TMPDIR))
+            # if not is_tar_extracted(tar_filepath=tar_path, extraction_directory=temp_dir):
+            #     logging.info("Extracting archive for primitive {}.".format(primitive))
+            #     logging.info(f"tar_path: {tar_path}")
+            #     tar = tarfile.open(tar_path)
+            #     # temp_dir = Path(os.environ['TMPDIR'])
+            #     tar.extractall(path=temp_dir)
+            #     tar.close()
+            # else:
+            #     logging.info(f"Using exising data folder for primitive {primitive}")
 
             # Gather filenames in all splits, optionally truncate
             truncate = self.config["truncate"].get(primitive, 1)
@@ -299,7 +305,7 @@ class SyntheticDataset_gaussian(data.Dataset):
         grid_y = crop_size_y / stride
         grid_x = crop_size_x / stride
         start = stride / 2.0 - 0.5
-        xx, yy = np.meshgrid(range(int(grid_x)), range(int(grid_y)))
+        xx, yy = np.meshgrid(range(int(grid_x)), range(int(grid_y)), indexing="xy")
         xx = xx * stride + start
         yy = yy * stride + start
         d2 = (xx - center[0]) ** 2 + (yy - center[1]) ** 2

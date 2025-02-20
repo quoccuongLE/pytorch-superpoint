@@ -137,7 +137,7 @@ class Coco(data.Dataset):
         grid_y = crop_size_y / stride
         grid_x = crop_size_x / stride
         start = stride / 2.0 - 0.5
-        xx, yy = np.meshgrid(range(int(grid_x)), range(int(grid_y)))
+        xx, yy = np.meshgrid(range(int(grid_x)), range(int(grid_y)), indexing="xy")
         xx = xx * stride + start
         yy = yy * stride + start
         d2 = (xx - center[0]) ** 2 + (yy - center[1]) ** 2

@@ -159,8 +159,12 @@ def get_model(name):
 def modelLoader(model='SuperPointNet', **options):
     # create model
     logging.info("=> creating model: %s", model)
-    net = get_model(model)
-    net = net(**options)
+    if model == "SuperPointNet":
+        from models.superpoint.superpoint_net import SuperPointNet
+        net = SuperPointNet(encoder={}, detector_head={}, descriptor_head={}, **options)
+    else:
+        net = get_model(model)
+        net = net(**options)
     return net
 
 
@@ -186,4 +190,3 @@ def pretrainedLoader(net, optimizer, epoch, path, mode='full', full_path=False):
 
 if __name__ == '__main__':
     net = modelLoader(model='SuperPointNet')
-

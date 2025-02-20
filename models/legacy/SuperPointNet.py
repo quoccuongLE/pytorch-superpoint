@@ -284,5 +284,5 @@ if __name__ == '__main__':
   model = model.to(device)
 
   # check keras-like model summary using torchsummary
-  from torchsummary import summary
-  summary(model, input_size=(1, 224, 224))
+#   from torchsummary import summary
+#   summary(model, input_size=(1, 224, 224))
