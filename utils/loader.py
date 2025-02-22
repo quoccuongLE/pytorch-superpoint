@@ -156,15 +156,15 @@ def get_model(name):
     mod = __import__('models.{}'.format(name), fromlist=[''])
     return getattr(mod, name)
 
-def modelLoader(model='SuperPointNet', **options):
+def modelLoader(model='SuperPointNet', **kwargs):
     # create model
     logging.info("=> creating model: %s", model)
     if model == "SuperPointNet":
         from models.superpoint.superpoint_net import SuperPointNet
-        net = SuperPointNet(encoder={}, detector_head={}, descriptor_head={}, **options)
+        net = SuperPointNet(encoder={}, detector_head={}, descriptor_head={}, has_dustbin=True, **kwargs)
     else:
         net = get_model(model)
-        net = net(**options)
+        net = net(**kwargs)
     return net
 
 

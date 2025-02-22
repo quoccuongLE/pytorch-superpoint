@@ -25,6 +25,8 @@ from utils.loader import dataLoader, modelLoader, pretrainedLoader
 from utils.logging import *
 # from models.model_wrap import SuperPointFrontend_torch, PointTracker
 
+from trainer import Trainer
+
 ###### util functions ######
 def datasize(train_loader, config, tag='train'):
     logging.info('== %s split size %d in %d batches'%\
@@ -75,7 +77,8 @@ def train_joint(config, output_dir, args):
     from utils.loader import get_module
     train_model_frontend = get_module('', config['front_end_model'])
 
-    train_agent = train_model_frontend(config, save_path=save_path, device=device)
+    # train_agent = train_model_frontend(config, save_path=save_path, device=device)
+    train_agent = Trainer(config, save_path=save_path, device=device)
 
     # writer from tensorboard
     train_agent.writer = writer
@@ -85,8 +88,10 @@ def train_joint(config, output_dir, args):
     train_agent.val_loader = val_loader
 
     # load model initiates the model and load the pretrained model (if any)
-    train_agent.loadModel()
-    train_agent.dataParallel()
+    # train_agent.loadModel()
+    # train_agent.dataParallel()
+    train_agent.load_model()
+    train_agent.data_parallel()
 
     try:
         # train function takes care of training and evaluation

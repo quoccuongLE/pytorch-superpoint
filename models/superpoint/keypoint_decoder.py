@@ -2,6 +2,8 @@ from typing import Dict
 import numpy as np
 import torch
 
+from utils.losses import extract_patches, soft_argmax_2d, do_log, norm_patches
+
 
 class KeypointDecoder:
 
@@ -30,11 +32,9 @@ class KeypointDecoder:
         """
         patch_size = self.patch_size
         device = self.device
-        from utils.losses import norm_patches
 
         outs = {}
-        # extract patches
-        from utils.losses import extract_patches, soft_argmax_2d
+        # extract patchess
 
         label_idx = labels_2D[...].nonzero()
 
@@ -46,8 +46,8 @@ class KeypointDecoder:
         # patches = norm_patches(patches)
 
         # predict offsets
-        from utils.losses import do_log
 
+        # logarithm of patches
         patches_log = do_log(patches)
         # soft_argmax
         dxdy = soft_argmax_2d(

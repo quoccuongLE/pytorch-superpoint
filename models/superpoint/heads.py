@@ -1,6 +1,11 @@
 import torch
 from torch import nn
 
+from models.ops.tensor_transforms import (
+    reshape_pixels2superpixels,
+    reshape_superpixels2pixels,
+)
+
 
 class DetectorHead(nn.Module):
 
@@ -9,8 +14,9 @@ class DetectorHead(nn.Module):
         dict(out_channels=256, kernel_size=3, stride=1, padding=1),
     ]
 
-    def __init__(self, in_channels: int, *args, **kwargs):
+    def __init__(self, in_channels: int, has_dustbin: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.has_dustbin = has_dustbin
         _blocks = []
         feat_channels = in_channels
         for conv_config in self._conv_configs:
@@ -40,37 +46,24 @@ class DetectorHead(nn.Module):
         return self.layers(feat)
 
     def depth2space(self, x: torch.Tensor) -> torch.Tensor:
-        output = x.permute(0, 2, 3, 1)
-        (batch_size, d_height, d_width, d_depth) = output.size()
-        s_depth = int(d_depth / self._superpixel_size**2)
-        s_width = int(d_width * self._superpixel_size)
-        s_height = int(d_height * self._superpixel_size)
-        t_1 = output.reshape(
-            batch_size, d_height, d_width, self._superpixel_size**2, s_depth
-        )
-        spl = t_1.split(self._superpixel_size, 3)
-        stack = [t_t.reshape(batch_size, d_height, s_width, s_depth) for t_t in spl]
-        output = (
-            torch.stack(stack, 0)
-            .transpose(0, 1)
-            .permute(0, 2, 1, 3, 4)
-            .reshape(batch_size, s_height, s_width, s_depth)
-        )
-        output = output.permute(0, 3, 1, 2)
-        return output
+        return reshape_superpixels2pixels(x, superpixel_size=self._superpixel_size)
 
     def space2depth(self, x: torch.Tensor) -> torch.Tensor:
-        output = x.permute(0, 2, 3, 1)
-        (batch_size, s_height, s_width, s_depth) = output.size()
-        d_depth = s_depth * self._superpixel_size**2
-        d_width = int(s_width / self._superpixel_size)
-        d_height = int(s_height / self._superpixel_size)
-        t_1 = output.split(self._superpixel_size, 2)
-        stack = [t_t.reshape(batch_size, d_height, d_depth) for t_t in t_1]
-        output = torch.stack(stack, 1)
-        output = output.permute(0, 2, 1, 3)
-        output = output.permute(0, 3, 1, 2)
-        return output
+        superpixel_tensor =  reshape_pixels2superpixels(x, superpixel_size=self._superpixel_size)
+        if self.has_dustbin:
+            batch_size, _, Hc, Wc = superpixel_tensor.shape
+            dustbin = superpixel_tensor.sum(dim=1)
+            dustbin = 1 - dustbin
+            dustbin[dustbin < 1.0] = 0
+            # print('dust: ', dustbin.shape)
+            # labels = torch.cat((labels, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
+            superpixel_tensor = torch.cat(
+                (superpixel_tensor, dustbin.view(batch_size, 1, Hc, Wc)), dim=1
+            )
+            ## norm
+            dn = superpixel_tensor.sum(dim=1)
+            superpixel_tensor = superpixel_tensor.div(torch.unsqueeze(dn, 1))
+        return superpixel_tensor
 
     def compute_heatmap(self, feat: torch.Tensor):
         batch_size = feat.shape[0] if feat.dim() == 4 else -1
@@ -95,8 +88,9 @@ class DescriptorHead(nn.Module):
         dict(out_channels=256, kernel_size=3, stride=1, padding=1),
     ]
 
-    def __init__(self, in_channels: int, out_channels: int = 256, *args, **kwargs):
+    def __init__(self, in_channels: int, out_channels: int = 256, has_dustbin: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.has_dustbin = has_dustbin
         _blocks = []
         feat_channels = in_channels
         for conv_config in self._conv_configs:
