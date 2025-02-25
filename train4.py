@@ -6,6 +6,7 @@ Date: 2019/12/12
 """
 
 import argparse
+from datetime import datetime
 import yaml
 import os
 import logging
@@ -21,11 +22,12 @@ from utils.utils import getWriterPath
 from settings import EXPER_PATH
 
 ## loaders: data, model, pretrained model
-from utils.loader import dataLoader, modelLoader, pretrainedLoader
-from utils.logging import *
-# from models.model_wrap import SuperPointFrontend_torch, PointTracker
+from utils.loader import dataLoader, modelLoader, pretrainedLoader, data_loader
 
-from trainer import Trainer
+# from utils.logging import *
+# from models.model_wrap import SuperPointFrontend_torch, PointTracker
+# from trainer.dataloader import data_loader
+from trainer import BaseTrainer
 
 ###### util functions ######
 def datasize(train_loader, config, tag='train'):
@@ -52,7 +54,7 @@ def train_joint(config, output_dir, args):
     # config
     # from utils.utils import pltImshow
     # from utils.utils import saveImg
-    torch.set_default_tensor_type(torch.FloatTensor)
+    torch.set_default_dtype(torch.float32)
     task = config['data']['dataset']
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -67,7 +69,8 @@ def train_joint(config, output_dir, args):
 
     # data loading
     # data = dataLoader(config, dataset='syn', warp_input=True)
-    data = dataLoader(config, dataset=task, warp_input=True)
+    # data = dataLoader(config, dataset=task, warp_input=True)
+    data = data_loader(config, dataset=task, warp_input=True)
     train_loader, val_loader = data['train_loader'], data['val_loader']
 
     datasize(train_loader, config, tag='train')
@@ -78,7 +81,7 @@ def train_joint(config, output_dir, args):
     train_model_frontend = get_module('', config['front_end_model'])
 
     # train_agent = train_model_frontend(config, save_path=save_path, device=device)
-    train_agent = Trainer(config, save_path=save_path, device=device)
+    train_agent = BaseTrainer(config, save_path=save_path, device=device)
 
     # writer from tensorboard
     train_agent.writer = writer
@@ -103,9 +106,7 @@ def train_joint(config, output_dir, args):
 
 if __name__ == '__main__':
     # global var
-    torch.set_default_tensor_type(torch.FloatTensor)
-    logging.basicConfig(format='[%(asctime)s %(levelname)s] %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
+    torch.set_default_dtype(torch.float32)
 
     # add parser
     parser = argparse.ArgumentParser()
@@ -131,15 +132,18 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.debug:
-        logging.basicConfig(format='[%(asctime)s %(levelname)s] %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S', level=logging.DEBUG)
-
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
     # EXPER_PATH from settings.py
     output_dir = os.path.join(EXPER_PATH, args.exper_name)
     os.makedirs(output_dir, exist_ok=True)
+
+    logging.basicConfig(
+        format="[%(asctime)s %(levelname)s] %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.DEBUG if args.debug else logging.INFO,
+        filename=output_dir + f"/train_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log",
+    )
 
     # with capture_outputs(os.path.join(output_dir, 'log')):
     logging.info('Running command {}'.format(args.command.upper()))

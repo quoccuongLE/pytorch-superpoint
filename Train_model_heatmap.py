@@ -683,7 +683,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    torch.set_default_tensor_type(torch.FloatTensor)
+    torch.set_default_dtype(torch.FloatTensor)
     with open(filename, "r") as f:
         config = yaml.load(f)
 

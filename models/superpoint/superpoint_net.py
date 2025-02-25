@@ -19,6 +19,7 @@ class SuperPointNet(nn.Module):
         descriptor_head: Union[dict, nn.Module, None] = None,
         feature_channels: int = 128,
         has_dustbin: bool = False,
+        freeze_description_head: bool = True,
         *args,
         **kwargs
     ):
@@ -47,6 +48,10 @@ class SuperPointNet(nn.Module):
         if keypoint_decoder is None:
             keypoint_decoder = {}
         self.keypoint_decoder = KeypointDecoder(**keypoint_decoder)
+
+        if freeze_description_head:
+            for param in self.descriptor_head.parameters():
+                param.requires_grad = False
 
     def forward(self, x):
         feat = self.encoder(x)

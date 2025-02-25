@@ -22,3 +22,5 @@ datasets/draw_*
 datasets/gaussian_noise/
 datasets/synthetic_shapes_v6/
 *.pth.tar
+
+logs/*/*.log

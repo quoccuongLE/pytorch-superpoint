@@ -55,8 +55,6 @@ class DetectorHead(nn.Module):
             dustbin = superpixel_tensor.sum(dim=1)
             dustbin = 1 - dustbin
             dustbin[dustbin < 1.0] = 0
-            # print('dust: ', dustbin.shape)
-            # labels = torch.cat((labels, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
             superpixel_tensor = torch.cat(
                 (superpixel_tensor, dustbin.view(batch_size, 1, Hc, Wc)), dim=1
             )

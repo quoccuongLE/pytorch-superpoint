@@ -35,6 +35,8 @@ from settings import SYN_TMPDIR
 
 from utils.utils import is_tar_extracted
 
+from .ops.preprocessing import FromPixel2Superpixel
+
 # DATA_PATH = '.'
 import multiprocessing
 
@@ -183,6 +185,8 @@ class SyntheticDataset_gaussian(data.Dataset):
         from utils.photometric import ImgAugTransform, customizedTransform
         from utils.utils import compute_valid_mask
         from utils.utils import inv_warp_image, warp_points
+
+        self.from_pixel2superpixel = FromPixel2Superpixel(superpixel_size=8)
 
         torch.set_default_tensor_type(torch.FloatTensor)
         np.random.seed(seed)
@@ -597,6 +601,18 @@ class SyntheticDataset_gaussian(data.Dataset):
         if self.getPts:
             sample.update({"pts": pnts})
 
+        labels_3D = self.from_pixel2superpixel.space2depth(
+            sample["labels_2D"][None, ...]
+        ).float()
+        mask_3D_flattened = self.from_pixel2superpixel.get_masks(
+            sample["valid_mask"][None, ...]
+        )
+        sample.update(
+            {
+                "labels_3D": labels_3D[0],
+                "mask_3D_flattened": mask_3D_flattened[0],
+            }
+        )
         return sample
 
     def __len__(self):
