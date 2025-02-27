@@ -62,9 +62,7 @@ class SuperPointNet(nn.Module):
             raw_descriptors = None
         return {"semi": raw_detection, "desc": raw_descriptors}
 
-    def post_process(self, output: Dict[str, torch.Tensor]):
-        # from utils.utils import flattenDetection
-        # from models.model_utils import pred_soft_argmax, sample_desc_from_points
+    def post_process(self, output: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         semi = output["semi"]
         desc = output["desc"]
         # Flatten [batch_size, 1, H, W]
@@ -72,14 +70,17 @@ class SuperPointNet(nn.Module):
         # nms
         heatmap_nms_batch = self.keypoint_decoder.heatmap_to_nms(heatmap, tensor=True)
         # extract offsets
-        outs = self.keypoint_decoder.pred_soft_argmax(heatmap_nms_batch, heatmap)
-        residual = outs["pred"]
-        # extract points
-        outs = self.keypoint_decoder.batch_extract_features(
-            desc, heatmap_nms_batch, residual
+        residual, patches = self.keypoint_decoder.pred_soft_argmax(
+            heatmap_nms_batch, heatmap
         )
 
-        # output.update({'heatmap': heatmap, 'heatmap_nms': heatmap_nms, 'descriptors': descriptors})
-        output.update(outs)
-        self.output = None
+        # extract points
+        pts_int, pts_offset, pts_desc = self.keypoint_decoder.batch_extract_features(
+            desc, heatmap_nms_batch, residual
+        )
+        output["pred"] = residual
+        output["patches"] = patches
+        output["pts_int"] = pts_int
+        output["pts_offset"] = pts_offset
+        output["pts_desc"] = pts_desc
         return output

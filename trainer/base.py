@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Literal
 
+import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,7 +19,6 @@ from utils.utils import (
     labels2Dto3D_flattened,
     precisionRecall_torch,
     save_checkpoint,
-    getPtsFromHeatmap,
 )
 
 from .utils import get_ndarray, img_overlap, update_overlap, to_floatTensor
@@ -78,7 +78,11 @@ class BaseTrainer:
         self.cell_size = 8
         self.subpixel = False
 
+        self.batch_size = self.config["model"]["batch_size"]
         self.max_iter = config["train_iter"]
+        self.max_epoch = np.ceil(self.max_iter / self.batch_size)
+
+        self.model_name = self.config["model"]["name"]
 
         self.gaussian = False
         if self.config["data"]["gaussian_label"]["enable"]:
@@ -151,12 +155,11 @@ class BaseTrainer:
         init or load optimizer
         :return:
         """
-        model = self.config["model"]["name"]
+        # model_name = self.config["model"]["name"]
         params = self.config["model"]["params"]
-        print("model: ", model)
-        net = modelLoader(model=model, **params).to(self.device)
-        logging.info("=> setting adam solver")
-        optimizer = self.get_optimizer(net, lr=self.config["model"]["learning_rate"])
+        logging.info("Model: ", self.model_name)
+        model = modelLoader(model=self.model_name, **params).to(self.device)
+        optimizer = self.get_optimizer(model, lr=self.config["model"]["learning_rate"])
 
         n_iter = 0
         ## new model or load pretrained
@@ -168,8 +171,8 @@ class BaseTrainer:
                 "" if path[-4:] == ".pth" else "full"
             )  # the suffix is '.pth' or 'tar.gz'
             logging.info("load pretrained model from: %s", path)
-            net, optimizer, n_iter = pretrainedLoader(
-                net, optimizer, n_iter, path, mode=mode, full_path=True
+            model, optimizer, n_iter = pretrainedLoader(
+                model, optimizer, n_iter, path, mode=mode, full_path=True
             )
             logging.info("successfully load pretrained model from: %s", path)
 
@@ -179,7 +182,7 @@ class BaseTrainer:
                 n_iter = 0
             return n_iter
 
-        self.model = net
+        self.model = model
         self.optimizer = optimizer
         self.n_iter = set_iter(n_iter)
 
@@ -207,7 +210,20 @@ class BaseTrainer:
         print("set train loader")
         self._val_loader = loader
 
-    def train(self, **kwargs):
+    def validate(self):
+        val_epoch_loss = 0.0
+        for sample_val in self.val_loader:
+            loss = self.training_step(
+                sample_val, self.n_iter, mode="val"
+            )
+            val_epoch_loss += loss
+
+        logging.info(
+            f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}"
+        )
+        print(f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}")
+
+    def train(self):
         """
         # outer loop for training
         # control training and validation pace
@@ -215,40 +231,41 @@ class BaseTrainer:
         :param options:
         :return:
         """
-        # training info
-        logging.info("n_iter: %d", self.n_iter)
-        logging.info("max_iter: %d", self.max_iter)
-        running_losses = []
+        logging.info(f"Start training: max_epoch = {self.max_epoch} | max_iter = {self.max_iter}")
+        losses = dict(train=[], val=[])
         epoch = 0
-        # Train one epoch
-        while self.n_iter < self.max_iter:
+        for epoch in range(self.max_epoch):
             print("epoch: ", epoch)
             epoch += 1
-            for i, sample_train in tqdm(enumerate(self.train_loader)):
-                # train one sample
-                loss_out = self.training_step(sample_train, self.n_iter, mode="train")
+            train_epoch_loss = 0.0
+            # Validation
+            for sample_train in tqdm(self.train_loader):
                 self.n_iter += 1
-                running_losses.append(loss_out)
-                # run validation
-                if self._eval and self.n_iter % self.config["validation_interval"] == 0:
-                    logging.info("====== Validating...")
-                    for j, sample_val in enumerate(self.val_loader):
-                        self.training_step(sample_val, self.n_iter + j, mode="val")
-                        if j > self.config.get("validation_size", 3):
-                            break
-                # save model
-                if self.n_iter % self.config["save_interval"] == 0:
-                    logging.info(
-                        "save model: every %d interval, current iteration: %d",
-                        self.config["save_interval"],
-                        self.n_iter,
-                    )
-                    self.save_model()
-                # ending condition
+                loss = self.training_step(sample_train, self.n_iter, mode="train")
+                losses["train"].append(loss)
+                train_epoch_loss += loss
                 if self.n_iter > self.max_iter:
-                    # end training
                     logging.info("End training: %d", self.n_iter)
                     break
+            logging.info(f"Train loss = {train_epoch_loss / len(self.train_loader) :.4f}")
+
+            # Validation
+            if self._eval:
+                val_epoch_loss = 0.0
+                for sample_val in enumerate(self.val_loader):
+                    loss = self.training_step(
+                        sample_val, self.n_iter, mode="val"
+                    )
+                    losses["val"].append(loss)
+                    val_epoch_loss += loss
+                logging.info(
+                    f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}"
+                )
+
+            # Save model
+            if epoch % self.config["save_interval"] == 0:
+                logging.info("Save model at epoch: %d", epoch)
+                self.save_model(epoch)
 
     def get_labels(
         self, labels_2D: torch.Tensor, cell_size: int, device: str = "cpu"
@@ -390,7 +407,7 @@ class BaseTrainer:
                 mode,
             )
 
-        self.tb_scalar_dict(self.scalar_dict, mode)
+        # self.tb_scalar_dict(self.scalar_dict, mode)
 
         return loss.item()
 
@@ -421,7 +438,7 @@ class BaseTrainer:
         update_overlap(
             self.images_dict,
             labels_2D,
-            heatmap_org_nms_batch[np.newaxis, ...],
+            heatmap_org_nms_batch[None, ...],
             img,
             "original",
         )
@@ -477,22 +494,17 @@ class BaseTrainer:
         # self.tb_images_dict(mode, self.images_dict, max_img=2)
         # self.tb_hist_dict(mode, self.hist_dict)
 
-    def save_model(self):
-        """
-        # save checkpoint for resuming training
-        :return:
-        """
+    def save_model(self, epoch: int = 0):
         model_state_dict = self.model.module.state_dict()
-        save_checkpoint(
-            self.save_path,
-            {
+        net_state = {
                 "n_iter": self.n_iter + 1,
                 "model_state_dict": model_state_dict,
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "loss": self.loss,
-            },
-            self.n_iter,
-        )
+            }
+        filename = f"{self.model_name}_e{epoch}_checkpoint.pth.tar"
+        logging.info("Saving checkpoint to ", filename)
+        torch.save(net_state, self.save_path / filename)
 
     def tb_scalar_dict(self, losses, task="training"):
         """

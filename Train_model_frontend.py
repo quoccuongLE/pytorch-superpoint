@@ -721,11 +721,12 @@ class Train_model_frontend(object):
                 if idx >= max_img:
                     break
                 # print(f"element: {element}")
-                self.writer.add_image(
-                    task + "-" + element + "/%d" % idx,
-                    tb_imgs[element][idx, ...],
-                    self.n_iter,
-                )
+                # self.writer.add_image(
+                #     task + "-" + element + "/%d" % idx,
+                #     tb_imgs[element][idx, ...],
+                #     self.n_iter,
+                # )
+                pass
 
 
     def tb_hist_dict(self, task, tb_dict):

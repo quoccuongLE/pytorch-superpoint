@@ -24,3 +24,4 @@ datasets/synthetic_shapes_v6/
 *.pth.tar
 
 logs/*/*.log
+.env

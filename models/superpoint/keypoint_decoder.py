@@ -1,8 +1,10 @@
 from typing import Dict
+
 import numpy as np
 import torch
 
-from utils.losses import extract_patches, soft_argmax_2d, do_log, norm_patches
+from utils.losses import extract_patches, norm_patches, soft_argmax_2d
+from utils.utils import crop_or_pad_choice
 
 
 class KeypointDecoder:
@@ -24,47 +26,48 @@ class KeypointDecoder:
         self.heatmap_nms_batch = None
 
     # @staticmethod
-    def pred_soft_argmax(self, labels_2D: torch.Tensor, heatmap: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def pred_soft_argmax(
+        self, labels_2D: torch.Tensor, heatmap: torch.Tensor
+    ) -> Dict[str, torch.Tensor]:
         """
 
         return:
             dict {'loss': mean of difference btw pred and res}
         """
-        patch_size = self.patch_size
-        device = self.device
-
         outs = {}
         # extract patchess
-
         label_idx = labels_2D[...].nonzero()
 
         # patch_size = self.config['params']['patch_size']
         patches = extract_patches(
-            label_idx.to(device), heatmap.to(device), patch_size=patch_size
+            label_idx.to(self.device),
+            heatmap.to(self.device),
+            patch_size=self.patch_size,
         )
         # norm patches
         # patches = norm_patches(patches)
 
         # predict offsets
-
-        # logarithm of patches
-        patches_log = do_log(patches)
+        patches[patches < 0] = 1e-6
+        log_patches = patches.log()
         # soft_argmax
         dxdy = soft_argmax_2d(
-            patches_log, normalized_coordinates=False
+            log_patches, normalized_coordinates=False
         )  # tensor [B, N, patch, patch]
         dxdy = dxdy.squeeze(1)  # tensor [N, 2]
-        dxdy = dxdy - patch_size // 2
+        dxdy = dxdy - self.patch_size // 2
 
         # loss
-        outs["pred"] = dxdy
+        # outs["pred"] = dxdy
         # ls = lambda x, y: dxdy.cpu() - points_res.cpu()
-        outs["patches"] = patches
-        return outs
+        # outs["patches"] = patches
+        return dxdy, patches
 
     # torch
     @staticmethod
-    def sample_desc_from_points(coarse_desc: torch.Tensor, pts: torch.Tensor, cell_size: int = 8) -> torch.Tensor:
+    def sample_desc_from_points(
+        coarse_desc: torch.Tensor, pts: torch.Tensor, cell_size: int = 8
+    ) -> torch.Tensor:
         """
         inputs:
             coarse_desc: tensor [1, 256, Hc, Wc]
@@ -112,7 +115,9 @@ class KeypointDecoder:
         ]  # tensor [N, 2]
         return points_res
 
-    def heatmap_to_nms(self, heatmap: torch.Tensor, tensor: bool = False, boxnms: bool = False) -> np.ndarray:
+    def heatmap_to_nms(
+        self, heatmap: torch.Tensor, tensor: bool = False, boxnms: bool = False
+    ) -> np.ndarray:
         """
         return:
           heatmap_nms_batch: np [batch, 1, H, W]
@@ -145,7 +150,9 @@ class KeypointDecoder:
         return heatmap_nms_batch
 
     @staticmethod
-    def heatmap_nms(heatmap: np.ndarray, nms_dist: int = 4, conf_thresh: float = 0.015) -> np.ndarray:
+    def heatmap_nms(
+        heatmap: np.ndarray, nms_dist: int = 4, conf_thresh: float = 0.015
+    ) -> np.ndarray:
         """
         input:
             heatmap: np [(1), H, W]
@@ -186,17 +193,13 @@ class KeypointDecoder:
             pts_int_b = pts_idx[mask_b][:, 2:].float()  # default floatTensor
             pts_int_b = pts_int_b[:, [1, 0]]  # tensor [N, 2(x,y)]
             res_b = residual[mask_b]
-            # print("res_b: ", res_b.shape)
-            # print("pts_int_b: ", pts_int_b.shape)
             pts_b = pts_int_b + res_b  # .no_grad()
             # extract desc
             pts_desc_b = self.sample_desc_from_points(
                 desc[i].unsqueeze(0), pts_b
             ).squeeze(0)
-            # print("pts_desc_b: ", pts_desc_b.shape)
-            # get random shuffle
-            from utils.utils import crop_or_pad_choice
 
+            # Get random shuffle
             choice = crop_or_pad_choice(
                 pts_int_b.shape[0], out_num_points=self.out_num_points, shuffle=True
             )
@@ -208,4 +211,4 @@ class KeypointDecoder:
         pts_int = torch.stack((pts_int), dim=0)
         pts_offset = torch.stack((pts_offset), dim=0)
         pts_desc = torch.stack((pts_desc), dim=0)
-        return {"pts_int": pts_int, "pts_offset": pts_offset, "pts_desc": pts_desc}
+        return pts_int, pts_offset, pts_desc

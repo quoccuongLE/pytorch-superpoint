@@ -80,8 +80,8 @@ def train_joint(config, output_dir, args):
     from utils.loader import get_module
     train_model_frontend = get_module('', config['front_end_model'])
 
-    # train_agent = train_model_frontend(config, save_path=save_path, device=device)
-    train_agent = BaseTrainer(config, save_path=save_path, device=device)
+    train_agent = train_model_frontend(config, save_path=save_path, device=device)
+    # train_agent = BaseTrainer(config, save_path=save_path, device=device)
 
     # writer from tensorboard
     train_agent.writer = writer
@@ -91,18 +91,20 @@ def train_joint(config, output_dir, args):
     train_agent.val_loader = val_loader
 
     # load model initiates the model and load the pretrained model (if any)
-    # train_agent.loadModel()
-    # train_agent.dataParallel()
-    train_agent.load_model()
-    train_agent.data_parallel()
+    train_agent.loadModel()
+    train_agent.dataParallel()
+    # train_agent.load_model()
+    # train_agent.data_parallel()
+    if args.eval:
+        train_agent.validate()
+    else:
+        try:
+            # train function takes care of training and evaluation
+            train_agent.train()
+        except KeyboardInterrupt:
+            print ("press ctrl + c, save model!")
+            train_agent.saveModel()
 
-    try:
-        # train function takes care of training and evaluation
-        train_agent.train()
-    except KeyboardInterrupt:
-        print ("press ctrl + c, save model!")
-        train_agent.saveModel()
-        pass
 
 if __name__ == '__main__':
     # global var

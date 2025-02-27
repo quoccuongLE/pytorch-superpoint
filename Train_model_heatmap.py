@@ -176,6 +176,16 @@ class Train_model_heatmap(Train_model_frontend):
             loss = loss / (mask.sum() + 1e-10)
         return loss
 
+    def validate(self):
+        val_epoch_loss = 0.0
+        for sample_val in self.val_loader:
+            self.n_iter += 1
+            loss = self.train_val_sample(sample_val, self.n_iter, train=False)
+            val_epoch_loss += loss
+
+        logging.info(f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}")
+        print(f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}")
+
     def train_val_sample(self, sample, n_iter=0, train=False):
         """
         # key function
@@ -512,14 +522,14 @@ class Train_model_heatmap(Train_model_frontend):
                 to_floatTensor(heatmap_org_nms_batch[:, np.newaxis, ...]),
                 sample["labels_2D"],
             )
-            print("pr_mean")
-            self.scalar_dict.update(pr_mean)
+        #     print("pr_mean")
+        #     self.scalar_dict.update(pr_mean)
 
-            self.printLosses(self.scalar_dict, task)
-            self.tb_images_dict(task, self.images_dict, max_img=2)
-            self.tb_hist_dict(task, self.hist_dict)
+        #     self.printLosses(self.scalar_dict, task)
+        #     self.tb_images_dict(task, self.images_dict, max_img=2)
+        #     self.tb_hist_dict(task, self.hist_dict)
 
-        self.tb_scalar_dict(self.scalar_dict, task)
+        # self.tb_scalar_dict(self.scalar_dict, task)
 
         return loss.item()
 
