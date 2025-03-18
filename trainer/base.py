@@ -2,32 +2,37 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Literal
 
-import math
 import numpy as np
 import torch
 import torch.nn as nn
-
 import torch.optim
 import torch.optim as optim
 import torch.utils.data
 from tqdm import tqdm
 
-from utils.loader import modelLoader, pretrainedLoader
-from utils.tools import dict_update
-from utils.utils import (
-    flattenDetection,
-    labels2Dto3D_flattened,
-    precisionRecall_torch,
-    save_checkpoint,
-)
-
-from .utils import get_ndarray, img_overlap, update_overlap, to_floatTensor
-
 from models.ops.tensor_transforms import reshape_pixels2superpixels
 from models.ops.utils import get_point_from_heatmap
+from models.superpoint.superpoint_net import SuperPointNet
+from utils.experimental.tools import dict_update
+from utils.experimental.loader import load_checkpoint
+from utils.utils import descriptor_loss
+from utils.loss_functions.sparse_loss import batch_descriptor_loss_sparse
+from utils.loader import pretrainedLoader as pretrained_loader
 
+from .utils import get_ndarray, to_floatTensor, update_overlap
 
 TrainerMode = Literal["train", "val", "test"]
+
+
+def precision_recall_metrics(pred, labels):
+    offset = 10**-6
+    assert (
+        pred.size() == labels.size()
+    ), "Sizes of pred, labels should match when you get the precision/recall!"
+    precision = torch.sum(pred * labels) / (torch.sum(pred) + offset)
+    recall = torch.sum(pred * labels) / (torch.sum(labels) + offset)
+    assert precision.item() <= 1.0 and precision.item() >= 0.0
+    return {"precision": precision, "recall": recall}
 
 
 class BaseTrainer:
@@ -80,7 +85,7 @@ class BaseTrainer:
 
         self.batch_size = self.config["model"]["batch_size"]
         self.max_iter = config["train_iter"]
-        self.max_epoch = np.ceil(self.max_iter / self.batch_size)
+        self.max_epoch = int(np.ceil(self.max_iter / self.batch_size))
 
         self.model_name = self.config["model"]["name"]
 
@@ -90,15 +95,12 @@ class BaseTrainer:
 
         if self.config["model"]["dense_loss"]["enable"]:
             print("use dense_loss!")
-            from utils.utils import descriptor_loss
-
             self.desc_params = self.config["model"]["dense_loss"]["params"]
             self.descriptor_loss = descriptor_loss
             self.desc_loss_type = "dense"
         elif self.config["model"]["sparse_loss"]["enable"]:
             print("use sparse_loss!")
             self.desc_params = self.config["model"]["sparse_loss"]["params"]
-            from utils.loss_functions.sparse_loss import batch_descriptor_loss_sparse
 
             self.descriptor_loss = batch_descriptor_loss_sparse
             self.desc_loss_type = "sparse"
@@ -157,8 +159,11 @@ class BaseTrainer:
         """
         # model_name = self.config["model"]["name"]
         params = self.config["model"]["params"]
-        logging.info("Model: ", self.model_name)
-        model = modelLoader(model=self.model_name, **params).to(self.device)
+        logging.info(f"Model: {self.model_name}")
+        # model = modelLoader(model=self.model_name, **params).to(self.device)
+        model = SuperPointNet(
+            encoder={}, detector_head={}, descriptor_head={}, has_dustbin=True, **params
+        ).to(self.device)
         optimizer = self.get_optimizer(model, lr=self.config["model"]["learning_rate"])
 
         n_iter = 0
@@ -171,7 +176,7 @@ class BaseTrainer:
                 "" if path[-4:] == ".pth" else "full"
             )  # the suffix is '.pth' or 'tar.gz'
             logging.info("load pretrained model from: %s", path)
-            model, optimizer, n_iter = pretrainedLoader(
+            model, optimizer, n_iter = pretrained_loader(
                 model, optimizer, n_iter, path, mode=mode, full_path=True
             )
             logging.info("successfully load pretrained model from: %s", path)
@@ -192,7 +197,6 @@ class BaseTrainer:
         loader for dataset, set from outside
         :return:
         """
-        print("get dataloader")
         return self._train_loader
 
     @train_loader.setter
@@ -202,7 +206,6 @@ class BaseTrainer:
 
     @property
     def val_loader(self):
-        print("get dataloader")
         return self._val_loader
 
     @val_loader.setter
@@ -213,25 +216,16 @@ class BaseTrainer:
     def validate(self):
         val_epoch_loss = 0.0
         for sample_val in self.val_loader:
-            loss = self.training_step(
-                sample_val, self.n_iter, mode="val"
-            )
+            loss = self.training_step(sample_val, self.n_iter, mode="val")
             val_epoch_loss += loss
 
-        logging.info(
-            f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}"
-        )
+        logging.info(f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}")
         print(f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}")
 
     def train(self):
-        """
-        # outer loop for training
-        # control training and validation pace
-        # stop when reaching max iterations
-        :param options:
-        :return:
-        """
-        logging.info(f"Start training: max_epoch = {self.max_epoch} | max_iter = {self.max_iter}")
+        logging.info(
+            f"Start training: max_epoch = {self.max_epoch} | max_iter = {self.max_iter}"
+        )
         losses = dict(train=[], val=[])
         epoch = 0
         for epoch in range(self.max_epoch):
@@ -239,49 +233,54 @@ class BaseTrainer:
             epoch += 1
             train_epoch_loss = 0.0
             # Validation
-            for sample_train in tqdm(self.train_loader):
+            for sample_train in tqdm(
+                self.train_loader, desc=f"Training [{epoch}/{self.max_epoch}]"
+            ):
                 self.n_iter += 1
-                loss = self.training_step(sample_train, self.n_iter, mode="train")
+                loss, metrics = self.training_step(
+                    sample_train, self.n_iter, mode="train"
+                )
                 losses["train"].append(loss)
                 train_epoch_loss += loss
                 if self.n_iter > self.max_iter:
                     logging.info("End training: %d", self.n_iter)
                     break
-            logging.info(f"Train loss = {train_epoch_loss / len(self.train_loader) :.4f}")
+            msg = f"[{epoch}]Train loss = {train_epoch_loss / len(self.train_loader) :.4f}"
+            msg += f"\n Metrics: {metrics}"
+            logging.info(msg)
+            print(msg)
 
             # Validation
             if self._eval:
                 val_epoch_loss = 0.0
-                for sample_val in enumerate(self.val_loader):
-                    loss = self.training_step(
+                for sample_val in self.val_loader:
+                    loss, metrics = self.training_step(
                         sample_val, self.n_iter, mode="val"
                     )
                     losses["val"].append(loss)
                     val_epoch_loss += loss
-                logging.info(
-                    f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}"
-                )
+                logging.info(f"Val loss = {val_epoch_loss / len(self.val_loader) :.4f}")
 
             # Save model
             if epoch % self.config["save_interval"] == 0:
                 logging.info("Save model at epoch: %d", epoch)
                 self.save_model(epoch)
 
-    def get_labels(
-        self, labels_2D: torch.Tensor, cell_size: int, device: str = "cpu"
-    ) -> torch.Tensor:
-        """
-        # transform 2D labels to 3D shape for training
-        :param labels_2D:
-        :param cell_size:
-        :param device:
-        :return:
-        """
-        labels3D_flattened = labels2Dto3D_flattened(
-            labels_2D.to(device), cell_size=cell_size
-        )
-        labels3D_in_loss = labels3D_flattened
-        return labels3D_in_loss
+    # def get_labels(
+    #     self, labels_2D: torch.Tensor, cell_size: int, device: str = "cpu"
+    # ) -> torch.Tensor:
+    #     """
+    #     # transform 2D labels to 3D shape for training
+    #     :param labels_2D:
+    #     :param cell_size:
+    #     :param device:
+    #     :return:
+    #     """
+    #     labels3D_flattened = labels2Dto3D_flattened(
+    #         labels_2D.to(device), cell_size=cell_size
+    #     )
+    #     labels3D_in_loss = labels3D_flattened
+    #     return labels3D_in_loss
 
     def get_masks(
         self, mask_2D: torch.Tensor, cell_size: int, device: str = "cpu"
@@ -364,7 +363,7 @@ class BaseTrainer:
         self.optimizer.zero_grad()
 
         semi_warp = None
-        # forward + backward + optimize
+        # Forward + Backward + Optimize
         if mode == "train":
             outs = self.model(img.to(self.device))
             semi, coarse_desc = outs["semi"], outs["desc"]
@@ -383,33 +382,45 @@ class BaseTrainer:
 
         self.loss = loss
 
-        self.scalar_dict.update(dict(loss=loss))
-
-        self.input_to_img_dict(sample, self.images_dict)
-
         if mode == "train":
             loss.backward()
             self.optimizer.step()
 
-        if n_iter % tb_interval == 0 or mode == "val":
-            logging.info("Current iteration: %d", n_iter)
-
-            self.log_info(
-                semi,
-                det_loss_type,
-                if_warp,
-                semi_warp,
-                labels_2D,
-                img,
-                labels_warp_2D,
-                img_warp,
-                sample,
-                mode,
+        with torch.no_grad():
+            precision, recall = self.compute_metrics(
+                semi=semi, labels=sample["labels_2D"]
             )
+        # self.scalar_dict.update(dict(loss=loss))
+
+        # self.input_to_img_dict(sample, self.images_dict)
+        # if n_iter % tb_interval == 0 or mode == "val":
+        #     logging.info("Current iteration: %d", n_iter)
+
+        #     self.log_info(
+        #         semi,
+        #         det_loss_type,
+        #         if_warp,
+        #         semi_warp,
+        #         labels_2D,
+        #         img,
+        #         labels_warp_2D,
+        #         img_warp,
+        #         sample,
+        #         mode,
+        #     )
 
         # self.tb_scalar_dict(self.scalar_dict, mode)
 
-        return loss.item()
+        return loss.item(), dict(precision=precision, recall=recall)
+
+    def compute_metrics(self, semi: torch.Tensor, labels: torch.Tensor):
+        heatmap_org = self.model.detector_head.compute_heatmap(semi)
+        heatmap_org_nms_batch = self.heatmap_to_nms(heatmap_org)
+        precision, recall = self.batch_precision_recall(
+            to_floatTensor(heatmap_org_nms_batch[:, np.newaxis, ...]),
+            labels,
+        )
+        return precision, recall
 
     def log_info(
         self,
@@ -497,13 +508,13 @@ class BaseTrainer:
     def save_model(self, epoch: int = 0):
         model_state_dict = self.model.module.state_dict()
         net_state = {
-                "n_iter": self.n_iter + 1,
-                "model_state_dict": model_state_dict,
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "loss": self.loss,
-            }
+            "n_iter": self.n_iter + 1,
+            "model_state_dict": model_state_dict,
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "loss": self.loss,
+        }
         filename = f"{self.model_name}_e{epoch}_checkpoint.pth.tar"
-        logging.info("Saving checkpoint to ", filename)
+        logging.info(f"Saving checkpoint to {filename}")
         torch.save(net_state, self.save_path / filename)
 
     def tb_scalar_dict(self, losses, task="training"):
@@ -515,7 +526,6 @@ class BaseTrainer:
         """
         for element in list(losses):
             self.writer.add_scalar(task + "-" + element, losses[element], self.n_iter)
-            # print (task, '-', element, ": ", losses[element].item())
 
     def tb_images_dict(self, task, tb_imgs, max_img=5):
         """
@@ -550,15 +560,15 @@ class BaseTrainer:
             msg += f"{task} - {k}: {v.item()}\n"
         logging.info(msg)
 
-    def get_heatmap(
-        self, semi: torch.Tensor, det_loss_type: str = "softmax"
-    ) -> torch.Tensor:
-        if det_loss_type == "l2":
-            heatmap = self.flatten_64to1(semi)
-        else:
-            heatmap = flattenDetection(semi)
+    # def get_heatmap(
+    #     self, semi: torch.Tensor, det_loss_type: str = "softmax"
+    # ) -> torch.Tensor:
+    #     if det_loss_type == "l2":
+    #         heatmap = self.flatten_64to1(semi)
+    #     else:
+    #         heatmap = flattenDetection(semi)
 
-        return heatmap
+    #     return heatmap
 
     @staticmethod
     def input_to_img_dict(
@@ -614,20 +624,39 @@ class BaseTrainer:
         return heatmap_nms_batch
 
     @staticmethod
-    def batch_precision_recall(batch_pred, batch_labels):
+    def batch_precision_recall(
+        batch_pred: torch.Tensor, batch_labels: torch.Tensor, mode: str = "sum"
+    ):
         precision_recall_list = []
         for i in range(batch_labels.shape[0]):
-            precision_recall = precisionRecall_torch(batch_pred[i], batch_labels[i])
+            precision_recall = precision_recall_metrics(batch_pred[i], batch_labels[i])
             precision_recall_list.append(precision_recall)
-        precision = np.mean(
-            [
-                precision_recall["precision"]
-                for precision_recall in precision_recall_list
-            ]
-        )
-        recall = np.mean(
-            [precision_recall["recall"] for precision_recall in precision_recall_list]
-        )
+        if mode == "sum":
+            precision = np.sum(
+                [
+                    precision_recall["precision"]
+                    for precision_recall in precision_recall_list
+                ]
+            )
+            recall = np.sum(
+                [
+                    precision_recall["recall"]
+                    for precision_recall in precision_recall_list
+                ]
+            )
+        elif mode == "mean":
+            precision = np.mean(
+                [
+                    precision_recall["precision"]
+                    for precision_recall in precision_recall_list
+                ]
+            )
+            recall = np.mean(
+                [
+                    precision_recall["recall"]
+                    for precision_recall in precision_recall_list
+                ]
+            )
         return precision, recall
 
     @staticmethod

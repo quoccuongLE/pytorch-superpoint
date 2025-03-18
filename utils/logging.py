@@ -2,12 +2,12 @@
 # import the whole file
 """
 
-import coloredlogs, logging
-logging.basicConfig()
-logger = logging.getLogger()
-coloredlogs.install(level='INFO', logger=logger)
+# import coloredlogs, logging
+# logging.basicConfig()
+# logger = logging.getLogger()
+# coloredlogs.install(level='INFO', logger=logger)
 
-from termcolor import colored, cprint
+# from termcolor import colored, cprint
 # from sty import fg, bg, ef, rs
 
 def toRed(text):

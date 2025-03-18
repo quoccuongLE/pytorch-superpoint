@@ -3,8 +3,86 @@ from typing import Dict
 import numpy as np
 import torch
 
-from utils.losses import extract_patches, norm_patches, soft_argmax_2d
-from utils.utils import crop_or_pad_choice
+
+def crop_or_pad_choice(in_num_points, out_num_points, shuffle=False):
+    # Adapted from https://github.com/haosulab/frustum_pointnet/blob/635c938f18b9ec1de2de717491fb217df84d2d93/fpointnet/data/datasets/utils.py
+    """Crop or pad point cloud to a fixed number; return the indexes
+    Args:
+        points (np.ndarray): point cloud. (n, d)
+        num_points (int): the number of output points
+        shuffle (bool): whether to shuffle the order
+    Returns:
+        np.ndarray: output point cloud
+        np.ndarray: index to choose input points
+    """
+    if shuffle:
+        choice = np.random.permutation(in_num_points)
+    else:
+        choice = np.arange(in_num_points)
+    assert out_num_points > 0, (
+        "out_num_points = %d must be positive int!" % out_num_points
+    )
+    if in_num_points >= out_num_points:
+        choice = choice[:out_num_points]
+    else:
+        num_pad = out_num_points - in_num_points
+        pad = np.random.choice(choice, num_pad, replace=True)
+        choice = np.concatenate([choice, pad])
+    return choice
+
+
+def _roi_pool(pred_heatmap, rois, patch_size=8):
+    from torchvision.ops import roi_pool
+
+    patches = roi_pool(
+        pred_heatmap, rois.float(), (patch_size, patch_size), spatial_scale=1.0
+    )
+    return patches
+
+
+def pts_to_bbox(points, patch_size):
+    """
+    input:
+        points: (y, x)
+    output:
+        bbox: (x1, y1, x2, y2)
+    """
+
+    shift_l = (patch_size + 1) / 2
+    shift_r = patch_size - shift_l
+    pts_l = points - shift_l
+    pts_r = points + shift_r + 1
+    bbox = torch.stack((pts_l[:, 1], pts_l[:, 0], pts_r[:, 1], pts_r[:, 0]), dim=1)
+    return bbox
+
+
+def extract_patches(label_idx, image, patch_size=7):
+    """
+    return:
+        patches: tensor [N, 1, patch, patch]
+    """
+    rois = pts_to_bbox(label_idx[:, 2:], patch_size).long()
+    # filter out??
+    rois = torch.cat((label_idx[:, :1], rois), dim=1)
+    # print_var(rois)
+    # print_var(image)
+    patches = _roi_pool(image, rois, patch_size=patch_size)
+    return patches
+
+
+def soft_argmax_2d(patches, normalized_coordinates=True):
+    """
+    params:
+        patches: (B, N, H, W)
+    return:
+        coor: (B, N, 2)  (x, y)
+
+    """
+    import torchgeometry as tgm
+
+    m = tgm.contrib.SpatialSoftArgmax2d(normalized_coordinates=normalized_coordinates)
+    coords = m(patches)  # 1x4x2
+    return coords
 
 
 class KeypointDecoder:

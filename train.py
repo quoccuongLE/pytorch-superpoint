@@ -2,18 +2,23 @@ import argparse
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict
 
 import torch
 import torch.optim
 import torch.utils.data
 import yaml
-from tensorboardX import SummaryWriter
 
 from settings import EXPER_PATH
-from trainer import BaseTrainer
-from utils.loader import data_loader, get_module, get_save_path
-from utils.utils import getWriterPath
+
+
+def get_save_path(output_dir):
+    save_path = Path(output_dir)
+    save_path = save_path / "checkpoints"
+    logging.info("Save everything to {}".format(save_path))
+    os.makedirs(save_path, exist_ok=True)
+    return save_path
 
 
 def log_dataset_batch_info(train_loader, config: Dict[str, Any], tag='train'):
@@ -24,23 +29,24 @@ def log_dataset_batch_info(train_loader, config: Dict[str, Any], tag='train'):
 
 
 def train(config: Dict[str, Any], output_dir: str, args: Dict[str, Any]):
+    # TODO: logging error
+    from utils.loader import data_loader
+    from trainer import BaseTrainer
+
     assert 'train_iter' in config
 
     torch.set_default_dtype(torch.float32)
     dataset_cfg = config['data']['dataset']
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logging.info('train on device: %s', device)
+    logging.info("Train on device: %s", device)
     with open(os.path.join(output_dir, 'config.yml'), 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
 
-    # writer = SummaryWriter(getWriterPath(task=args.command, 
-    #     exper_name=args.exper_name, date=True))
-    # Save data
     save_path = get_save_path(output_dir)
 
     # Data loading
-    data = data_loader(config, dataset=dataset_cfg, warp_input=True)
+    data = data_loader(config, dataset=dataset_cfg)
     train_loader, val_loader = data['train_loader'], data['val_loader']
 
     log_dataset_batch_info(train_loader, config, tag='train')
@@ -84,9 +90,6 @@ if __name__ == '__main__':
     parser.add_argument("--eval", action="store_true", default=False)
 
     args = parser.parse_args()
-
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
     output_dir = os.path.join(EXPER_PATH, args.exper_name)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -97,5 +100,8 @@ if __name__ == '__main__':
         filename=output_dir + f"/train_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log",
     )
 
-    # logging.info('Running command {}'.format(args.command.upper()))
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    logging.info("Running")
     train(config, output_dir, args)
